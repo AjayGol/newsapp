@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   FlatList,
@@ -7,12 +7,11 @@ import {
   StyleSheet,
   ListRenderItem,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import ArticleCard from '../components/ArticleCard';
 import { fetchNews } from '../api';
 import { getBookmarks, saveBookmarks } from '../utils/storage';
-// @ts-ignore
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useFocusEffect } from '@react-navigation/native';
 
 export interface Article {
   id: number;
@@ -24,15 +23,14 @@ export interface Article {
   published_at?: string;
 }
 
-// ✅ Navigation types
 type RootStackParamList = {
   Home: undefined;
   Detail: { article: Article };
 };
 
 type HomeScreenNavigationProp = NativeStackNavigationProp<
-    RootStackParamList,
-    'Home'
+  RootStackParamList,
+  'Home'
 >;
 
 type Props = {
@@ -44,44 +42,56 @@ export default function HomeScreen({ navigation }: Props) {
   const [bookmarks, setBookmarks] = useState<Article[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
 
-  // ✅ Refresh on screen focus
-  useFocusEffect(
-      React.useCallback(() => {
-        loadData();
-      }, [])
-  );
+  // ✅ Load news once on first mount
+  useEffect(() => {
+    loadArticles();
+  }, []);
 
-  const loadData = async () => {
+  const loadArticles = async () => {
     setLoading(true);
-    const data: Article[] = await fetchNews();
-    const saved: Article[] = await getBookmarks();
-    setArticles(data);
-    setBookmarks(saved);
-    setLoading(false);
+    try {
+      const data = await fetchNews();
+      console.log('Articles fetched:', data);
+      setArticles(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error('Error loading articles:', err);
+      setArticles([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
+  // ✅ Refresh only bookmarks on screen focus
+  useFocusEffect(
+    React.useCallback(() => {
+      const loadBookmarks = async () => {
+        const saved = await getBookmarks();
+        setBookmarks(saved);
+      };
+      loadBookmarks();
+    }, []),
+  );
+
   const toggleBookmark = async (item: Article) => {
-    let updated: Article[] = [];
-    const exists = bookmarks.find((b) => b.url === item.url);
-    if (exists) {
-      updated = bookmarks.filter((b) => b.url !== item.url);
-    } else {
-      updated = [...bookmarks, item];
-    }
+    const exists = bookmarks.find(b => b.url === item.url);
+    const updated = exists
+      ? bookmarks.filter(b => b.url !== item.url)
+      : [...bookmarks, item];
+
     setBookmarks(updated);
     await saveBookmarks(updated);
   };
 
   const isBookmarked = (item: Article): boolean =>
-      bookmarks.some((b) => b.url === item.url);
+    bookmarks.some(b => b.url === item.url);
 
   const renderItem: ListRenderItem<Article> = ({ item }) => (
-      <ArticleCard
-          item={item}
-          isBookmarked={isBookmarked(item)}
-          onPress={() => navigation.navigate('Detail', { article: item })}
-          onBookmark={() => toggleBookmark(item)}
-      />
+    <ArticleCard
+      item={item}
+      isBookmarked={isBookmarked(item)}
+      onPress={() => navigation.navigate('Detail', { article: item })}
+      onBookmark={() => toggleBookmark(item)}
+    />
   );
 
   if (loading) {
@@ -89,24 +99,24 @@ export default function HomeScreen({ navigation }: Props) {
   }
 
   return (
-      <FlatList
-          data={articles}
-          keyExtractor={(item) => item.url}
-          ListHeaderComponent={() => (
-              <View style={styles.header}>
-                <Text style={styles.title}>📰 Top Headlines</Text>
-              </View>
-          )}
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <Text style={styles.emptyTitle}>No articles available</Text>
-              <Text style={styles.emptySubtitle}>
-                Please check your internet connection or try again later.
-              </Text>
-            </View>
-          }
-          renderItem={renderItem}
-      />
+    <FlatList
+      data={articles}
+      keyExtractor={item => item.url}
+      ListHeaderComponent={() => (
+        <View style={styles.header}>
+          <Text style={styles.title}>📰 Top Headlines</Text>
+        </View>
+      )}
+      ListEmptyComponent={
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyTitle}>No articles available</Text>
+          <Text style={styles.emptySubtitle}>
+            Please check your internet connection or try again later.
+          </Text>
+        </View>
+      }
+      renderItem={renderItem}
+    />
   );
 }
 
